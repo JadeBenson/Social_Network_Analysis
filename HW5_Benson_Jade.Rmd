@@ -1,0 +1,192 @@
+---
+title: "Assignment 5"
+author: "Jade Benson"
+date: "10/31/2021"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(igraph)
+library(intergraph)
+#new computer - have to setup again 
+#library(devtools)
+#install_github("DougLuke/UserNetR")
+library(UserNetR)
+data(DHHS)
+```
+
+##Description##
+
+I chose the same Department of Health and Human Services (DHHS) dataset that I analyzed in Assignment 3, since my primary interest is public health and I think better understanding this network can help us improve the planning and organization of large-scale interventions in the federal government. This dataset includes 54 tobacco control leaders (nodes) in 11 different agenices of DHHS during 2004 - 2005 and describes 477 levels of connection between them (edges). 
+
+This study was conducted by snowball and reputational sampling to identify tobacco control leaders in each agency and then asking them to identify individuals most knowledgeable about tobacco activities within their own agency and any other tobacco leaders within the DHHS (full criteria can be found in their paper: https://www.ncbi.nlm.nih.gov/pmc/articles/PMC2928935/). The research team only included "substantial players" so dropped any individuals who did not receive 3 or more nominations from other leaders (95 sample size originally, then 54). Follow-up surveys were sent out to all 54 leaders (49 responded). The survey included questions about their network contact and structure, their experience, and what barriers they experienced working with other agencies on tobacco control. Respondents were presented with a list of all 54 identified leaders and asked if they were aware of them and if they were, contact frequency questions were asked. The network was symmetrized (undirected network) where if a dyad responded with different frequencies, they were averaged, and if only one responded, that level of communication was assumed. This symmetrizing accounted for the 5 missing responses and allowed for clearer analysis, so a directed network with varying weights was not required. 
+
+
+The research team aimed to explore how different node attributes including agency, job position/experience, and institutional barriers (independent variables) affected the levels of communication between the leaders (dependent variable, edges). I think the research did a good job of selecting the most influential tobacco control leaders since the Senior Advisor of Tobacco Control identified the starting leaders and then these people were asked to expand the network further. I would be curious about the 41 leaders who had been identified by a few leaders but not enough to qualify as "substantial players". Future public health outreach efforts could be designed to specifically include these people to expand the network and interventions. There may be different reasons why these lower leaders were not incorporated compared to those well-connected top leaders. The edges are supposed to measure the frequency of contact which was symmetrized by averaging the respondents' answers to the following scale (0 = no collaboration, 1 = share info only, 2 = collaborate informally, 3 = collaborate formally, 4 = collaborate formally on multiple projects). Again, I think this does a good job of empirically measuring their relationships and connections, however, I'm always interested in the inconsistency between respondents' answers. Do these mismatched answers in frequency/type of interaction actually reveal something about the relationship difficulties and, therefore, an important opportunity to improve collaborations? 
+
+I think the biggest ethical issue at the heart of this study is that it was directed by the Senior Advisor so there may be pressure to answer in particular ways. Although, hopefully unlikely, I could see a situation where respondents who were supposed to be tobacco leaders but were not sufficiently collaborating with others could have their job threatened by this study. There could be social consequences when this study was published as people working within these groups would likely be able to identify each of the people and could judge those that were infrequently collaborating. This type of peer-pressure, whether formally through firing threats or social shunning, may actually be a part of the desired outcome though as the Advisor wants to increase the amount of close connections across agencies. However, I still feel like this brings up some ethical concerns to disclose these relationships and play into these pressures. 
+
+##Analysis## 
+
+```{r prep}
+
+#summary(DHHS)
+#this has a long printout since all the edges but 
+#no duplicates
+#no isolates by design 
+
+#covert network to igraph object
+DHHS_igraph <- asIgraph(DHHS)
+class(DHHS_igraph)
+
+#undirected 
+is_directed(DHHS_igraph)
+
+#unweighted
+is_weighted(DHHS_igraph)
+```
+The network was already cleaned which makes this analysis much easier. 
+
+#Degree
+```{r degree}
+degree(DHHS_igraph)
+```
+
+Degree is the number of edges connected to each node. In this case, how many connections does each leader have to other leaders? Degree is best at explaining the connectedness of each of the nodes and their popularity. In this case, we could look at which leaders could spread information to the most people. 
+
+#Closeness
+```{r closeness}
+closeness(DHHS_igraph)
+```
+Closeness measures the average length of the shortest path between the node and all other nodes in the network. It captures how easy it is to reach all the nodes in the network. This metric can best describe how quickly information could spread throughout a whole network if it starts with different nodes. I think this metric would allow us to figure out the best few leaders to give information about a new initiative to in order to disperse it to everyone. 
+
+#Betweeness 
+```{r betweeness}
+betweenness(DHHS_igraph)
+```
+Betweenness captures if a node acts a bridge between other nodes, the number of times a node lies along the shortest path between two nodes. It is best used to find those crucial people in a network that tie together different groups and act as the "middle men" of information dispersal. We could use this to identify the key leaders that can spread information to those in the network that are in separate groups/cliques.  
+
+##Eigenvector 
+
+```{r eigenvector}
+evcent(DHHS_igraph)$vector
+
+```
+
+Eigenvector centrality measures how connected a node is to other highly connected nodes. We can use this to understand who are the powerful people in a network. We could use it to find our most powerful leaders if we were looking to promote influential people or recruit the top talent for a new project. 
+
+
+##Most central nodes##
+
+
+This is the raw table of the most central nodes. 
+```{r raw_table}
+
+#all nodes - raw 
+df_central <- data.frame(
+  degree = degree(DHHS_igraph), 
+  closeness = closeness(DHHS_igraph), 
+  betweeness = betweenness(DHHS_igraph), 
+  eigenvector = evcent(DHHS_igraph)$vector
+)
+
+row.names(df_central) <- vertex.attributes(DHHS_igraph)$vertex.names
+
+#this is a really dumb way of selecting top 20 most central nodes 
+#could select by one category if we're most interested in one centrality measure 
+#I'll just average and pick top 20 
+df_central$Mean <- rowMeans(df_central[,1:4])
+ordered_central <- df_central[order(-df_central$Mean),] 
+
+
+#raw 
+top_20_df <- ordered_central[1:20,1:4]
+top_20_df
+```
+
+
+This is the normalized table of most central nodes
+```{r normalized_table}
+
+#all nodes - normalized
+df_central_normalized <- data.frame(
+  degree = degree(DHHS_igraph, normalized = TRUE), 
+  closeness = closeness(DHHS_igraph, normalized = TRUE), 
+  betweeness = betweenness(DHHS_igraph, normalized = TRUE), 
+  #these are already normalized
+  eigenvector = evcent(DHHS_igraph)$vector
+)
+
+row.names(df_central_normalized) <- vertex.attributes(DHHS_igraph)$vertex.names
+
+#again kind of dumb, but here's how I select top 20 
+df_central_normalized$Mean <- rowMeans(df_central_normalized[,1:4])
+ordered_central_normalized <- df_central_normalized[order(-df_central_normalized$Mean),] 
+
+#raw 
+top_20_normalized_df <- ordered_central_normalized[1:20,1:4]
+top_20_normalized_df
+
+```
+##Visualizations## 
+
+I'm most interested in closeness and betweenness. In this network, closeness allows us to best identify the leaders who can spread the information quickest/easiest through the network, so we could spread the word about new collaborations and projects. Betweenness allows us to see who are the leaders that can best spread information between disparate groups. These leaders could help us maintain ties with agencies that are more isolated and perhaps bring in new groups of collaborators.  
+
+#Closeness
+
+```{r closeness_viz}
+
+# fruchterman reingold
+f <- layout.fruchterman.reingold(DHHS_igraph)
+
+
+# set colors
+V(DHHS_igraph)$color <- "black"
+V(DHHS_igraph) [ agency == 0 ]$color <- "navy"
+V(DHHS_igraph) [ agency == 1 ]$color <- "orange"
+V(DHHS_igraph) [ agency == 2 ]$color <- "yellow"
+V(DHHS_igraph) [ agency == 3 ]$color <- "green"
+V(DHHS_igraph) [ agency == 4 ]$color <- "blue"
+V(DHHS_igraph) [ agency == 5 ]$color <- "purple"
+V(DHHS_igraph) [ agency == 6 ]$color <- "pink"
+V(DHHS_igraph) [ agency == 7 ]$color <- "red"
+V(DHHS_igraph) [ agency == 8 ]$color <- "light blue"
+V(DHHS_igraph) [ agency == 9 ]$color <- "grey"
+V(DHHS_igraph) [ agency == 10 ]$color <- "brown"
+
+plot(DHHS_igraph, layout =f, vertex.size = closeness(DHHS_igraph, normalized = TRUE)*15, vertex.label = NA, vertex.label.color = "black", vertex.color = V(DHHS_igraph)$color)
+
+```
+
+As we can see, there are two nodes in the center of the network that have the biggest closeness score. One of these leaders is is in the CDC (yellow) and the other is in the OS (grey). 
+
+
+#Betweenness 
+```{r betweeness_viz}
+plot(DHHS_igraph, layout = f, vertex.size = betweenness(DHHS_igraph, normalized = TRUE)*100, vertex.label = NA) 
+```
+
+There are only a few nodes that have meaningful betweenness scores (everyone else is very small), meaning there are only a few nodes that act as bridges between other groups of leaders. There's again one in the CDC and one in OS that are acting as middle men of information flow between different agencies and different groups. 
+
+
+
+##Interpretation## 
+
+I think that closeness can help us best understand what is going on in this network because we are most interested in how to quickly spread information to everyone in the group. The purpose of the study was to identify influential leaders in tobacco control within the different agencies of the DHHS and use network analysis in order to improve their collaboration. Closeness tells us how many connections it takes for information about new programs (or anything else) to spread throughout all the leaders and we can use it to target the most optimal leaders to get this word out. We see that the top 10 most connected leaders all have high connectedness scores and they fall within three departments: OS, CDC, and NIH. Since the closeness measure aggregates the shortest paths, we can look at the distribution of shortest paths (from last time) to get more information. Overall, the network is well connected with the majority of nodes being connected through 2 edges. There are some that are more distant in that 4 connections category. In the article the researchers discussed how tobacco leaders in the FDA were isolated from the rest of the leaders except for their contacts in the CDC. The betweenness measure best illustrates how there are a few key leaders that act as the bridges with these other smaller groups of leaders. Information is posed to spread relatively quickly, but  there are some leaders in different agencies that need to be better incorporated into the main collaborative group. We can see that the tobacco control leaders are relatively clique-y with a high clustering coefficient (0.66). There are groups within agencies where all the leaders collaborate with each other but then other leaders that are further out in the information and collaboration chain since they only work with a few. I wonder how these numbers would change if the original 95 identified tobacco leaders had been surveyed. Those leaders would know and work with 2 or fewer other leaders in the group - which would mean that the closeness would go down, shortest paths would get longer, and clustering coefficient would decrease. It could be useful to have this information since we could expand interventions through those that are only partially engaged now. We can only look at those leaders that are already highly connected and work together relatively often. However, even in this closer group, we see that there's room for improvement especially across different agencies. From the network visualizations and tables, we see that a few agencies are maintaining most of the connections between each other and across the span of the network. Figuring out how to incorporate those in other agencies and reach out to some of the potential leaders should be top priorities to improving the collaboration and reach of the public health tobacco control networks within the DHHS. 
+
+
+```{r interpretation}
+ordered_central_normalized
+
+#shortest paths
+dt <- distance_table(DHHS_igraph, directed = FALSE)
+barplot(dt$res)
+
+#clustering coefficient 
+transitivity(DHHS_igraph, type = "average")
+
+```

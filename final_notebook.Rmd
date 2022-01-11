@@ -1,0 +1,401 @@
+---
+title: "nshap_sna_final"
+author: "Jade Benson"
+date: "12/1/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(haven)
+library(igraph)
+library(dplyr)
+library(tidyverse)
+#install.packages("tidymodels")
+library(tidymodels)
+library(ggplot2) #graphing
+#install.packages("survey")
+library(survey)
+#install.packages("egor")
+library(egor)
+
+#install.packages("matrixcalc") 
+library(matrixcalc)
+
+library(data.table)
+
+```
+
+I am interested in examining what network characteristics are associated with feelings of loneliness in older adults. I will use the second round of the NSHAP data to explore this research question. The public use datasets can be accessed here: https://www.icpsr.umich.edu/web/NACDA/studies/34921. This also includes the codebook that describes each of these variables in depth (how they were collected, the possible answers, missingness, etc.). 
+
+The full report describing the motivation, methodology, and findings can be found in the other attached word document, this markdown only outlines the steps taken to prepare the data and conduct the analyses. 
+
+
+## NSHAP network data 
+
+First, we begin by preparing NSHAP's public-use network data for our analysis and construct our network measures. Given how these data are reported, I thought it would be easier to manually calculate these metrics instead of prepping them in the node-edge-alter format. 
+
+```{r data}
+w2_network <- read_dta("/Users/jadebenson/Documents/nshap_w2/nshap_w2_network.dta")
+
+#View(w2_network)
+
+#only want section 1 alters (those listed in 5 rounds of the name generator)
+
+network_1 <- w2_network[which(w2_network$section==1), ] 
+summary(network_1)
+
+```
+
+
+Network degree 
+
+The number of alters the ego lists in their network. We will just count the number of times the su_id appears since this dataset is constructed with multiple su_ids for one ego and then different lineno's for their alters. 
+
+```{r degree}
+#degree
+
+degree_df <- network_1 %>% 
+  group_by(su_id) %>%
+  tally()
+
+summary(degree_df)
+
+```
+
+Diversity 
+
+How many unique types of relationships did the respondent have? Just count the number of unique types of relationships (relat2). 
+
+```{r diversity}
+
+diversity_df <- network_1 %>% 
+  group_by(su_id) %>%
+  summarise(diverse = n_distinct(relat2))
+
+summary(diversity_df)
+
+```
+Density 
+
+I use the weighted density measure as described by Wasserman and Faust in Chapter 4, 4.5.2 "Density in a Valued Graph." They say this metric is calculated by averaging the values attached to the lines across all lines divided by g(g-1). I assume this means we take the un-weighted density formula (2m / g(g-1)) where m is the number of edges and g is the number of nodes and replace m with the sum of the frequency weights. 
+
+```{r density}
+
+#we have g - this is the degree + 1 (because the ego is also a node)
+
+#now we just want to sum the weights of all the talk_freqs
+
+freq_vars <- c("su_id", "lineno", "talkfreq0", "talkfreq1", "talkfreq2", "talkfreq3", "talkfreq4", "talkfreq5")
+
+graphs <- network_1[freq_vars]
+
+graphs$talkfreq0 <- graphs$talkfreq0/8 
+graphs$talkfreq1 <- graphs$talkfreq1/8 
+graphs$talkfreq2 <- graphs$talkfreq2/8 
+graphs$talkfreq3 <- graphs$talkfreq3/8 
+graphs$talkfreq4 <- graphs$talkfreq4/8 
+graphs$talkfreq5 <- graphs$talkfreq5/8 
+
+#View(graphs)
+
+##Create dataframe with density values
+density_table <- data.table(su_id = unique(graphs$su_id),
+                       density = 0
+                       
+)
+
+
+for (i in unique(graphs$su_id)){
+  
+  #subset all su_ids
+  suid_sub <- subset(graphs, graphs$su_id== i)
+  
+  #n - how many alters in the subset? 
+  degree <- length(suid_sub$lineno) 
+  
+  #add one because degree includes ego
+  ego_degree <- degree + 1
+  
+  
+  #lower triangle
+  #this is the non-redundant frequency weights for each of the pairs
+  num_vals <- 2+degree 
+  
+  lt <- lower.triangle(data.matrix(suid_sub[,3:num_vals]))
+  
+  
+  density <- (2* sum(lt)) / (ego_degree * degree)
+  
+  density_table[su_id == i,2] <- density
+  
+ 
+}
+
+#View(density_table)
+#manually calculated a few of these and checks out! 
+
+density_df <- as.data.frame(density_table)
+
+summary(density_df)
+
+```
+
+Interaction frequency (Node strength)
+
+This is the sum of the frequency of communication between the ego and their alters. 
+
+```{r node_strength}
+summary(network_1$talkfreq0)
+
+#create interaction frequency weight 0.25 - 1 
+network_1$alter_weight <- network_1$talkfreq0/8
+
+ node_strength_df <- network_1 %>% 
+  group_by(su_id) %>%
+  summarise(inter_freq = sum(alter_weight))
+
+summary(node_strength_df)
+
+```
+
+Closeness
+
+This is the proportion of network ties and their closeness. I will just sum the closeness variable (scaled to be a weight) and divide by the degree. Maximum would be 1 (all ties are extremely close) and minimum would be 0.25 (all were not very close)
+
+```{r closeness}
+#summary(network_1$howclose)
+
+#create weight 0.25 - 1 
+network_1$close_scale <- network_1$howclose/4
+
+close_count <- network_1 %>% 
+  group_by(su_id) %>%
+  summarise(cc = sum(close_scale))
+#this is just the sum, will get proportion when we merge with degree data 
+
+#9 missing values 
+#will be slightly smaller sample size in regression for this one 
+summary(close_count)
+
+```
+
+
+Now we have all our desired network characteristics for the analysis, so we will combine them all together to merge in with the variables from the main dataset (loneliness and confounders). 
+
+```{r combine}
+
+degree_close <- merge(degree_df, close_count, by.x = "su_id", by.y = "su_id")
+
+#calculate closeness proportion now
+degree_close$prop_close <- degree_close$cc/degree_close$n
+
+merge2 <- merge(degree_close, diversity_df, by.x = "su_id", by.y = "su_id")
+
+merge3 <- merge(merge2, density_df, by.x = "su_id", by.y = "su_id")
+
+merge3 <- merge(merge2, density_df, by.x = "su_id", by.y = "su_id")
+
+network_metrics_df <- merge(merge3, node_strength_df, by.x = "su_id", by.y = "su_id")
+
+summary(network_metrics_df)
+
+#save to csv so I can more easily use this in future 
+#write.csv(network_metrics_df, "/Users/jadebenson/Documents/MACS/Autumn_2021/SNA/final_network_metrics.csv")
+
+```
+
+
+##NSHAP core survey 
+
+Now we move on to the core survey to construct the loneliness score and covariates. 
+
+```{r core}
+
+w2_core <- read_dta("/Users/jadebenson/Documents/nshap_w2/nshap_w2_core.dta")
+
+#View(w2_core)
+
+#construct the ucla loneliness score 
+#three questions, re-scaled, and summed
+
+#companionship 
+summary(w2_core$companion2)
+
+
+w2_core$ucla_c <- ifelse(w2_core$companion2 ==0, 0,
+                         ifelse(w2_core$companion2 ==1, 0, 
+                                ifelse(w2_core$companion2 ==2, 1,
+                                       ifelse(w2_core$companion2 ==3, 2, NA))))
+
+summary(w2_core$ucla_c)
+
+#isolation 
+
+summary(w2_core$isolated2)
+
+w2_core$ucla_i <- ifelse(w2_core$isolated2 ==0, 0,
+                         ifelse(w2_core$isolated2 ==1, 0, 
+                                ifelse(w2_core$isolated2 ==2, 1,
+                                       ifelse(w2_core$isolated2 ==3, 2, NA))))
+
+summary(w2_core$ucla_i)
+
+#left out
+
+summary(w2_core$leftout2)
+
+w2_core$ucla_l <- ifelse(w2_core$leftout2 ==0, 0,
+                         ifelse(w2_core$leftout2 ==1, 0, 
+                                ifelse(w2_core$leftout2 ==2, 1,
+                                       ifelse(w2_core$leftout2 ==3, 2, NA))))
+
+summary(w2_core$ucla_l)
+
+#UCLA score 
+w2_core$loneliness <- w2_core$ucla_c + w2_core$ucla_i + w2_core$ucla_l 
+
+summary(w2_core$loneliness)
+
+#674 missing values 
+#we will just drop these people 
+#could try multiple imputation, but don't know how to do that well enough for this final
+
+
+#subset into the variables I'll be using, then drop to create analytic sample 
+
+#core variables we will use in regression 
+
+core_vars <- c("su_id", "hh_id", "stratum", "weight_adj", "cluster", "gender", "age", "educ", "ethgrp", "maritlst", "loneliness")
+
+ego_data <- w2_core[core_vars]
+length(ego_data$su_id)
+
+#handle missingness
+summary(ego_data)
+
+#drop those missing loneliness score from this dataset 
+ego_data <- ego_data[!is.na(ego_data$loneliness),]
+
+length(ego_data$su_id)
+
+#also only want respondents born 1920 - 1947 
+#in 2010/2011 this includes adults aged 63 - 91
+ego_data <- ego_data[ which(ego_data$age >= 63& ego_data$age <=91), ]
+
+length(ego_data$su_id)
+
+#8 are missing race/ethnicity data, they'll just be re-coded to "other"
+ego_data <- ego_data %>% 
+  replace_na(list(ethgrp = 4))
+
+
+```
+
+To prepare table 2, I will examine the summary statistics of our variables in this smaller sample. 
+
+```{r summarystats}
+#loneliness 
+ego_data %>%
+  group_by(loneliness) %>%
+  summarise(cnt = n()) %>%
+  mutate(freq = cnt / sum(cnt)) %>% 
+  arrange(desc(freq))
+
+summary(ego_data$loneliness)
+
+#gender
+  ego_data %>%
+  group_by(gender) %>%
+  summarise(cnt = n()) %>%
+  mutate(freq = cnt / sum(cnt)) %>% 
+  arrange(desc(freq))
+
+#age 
+summary(ego_data$age)
+
+#race/ethnicity 
+
+ ego_data %>%
+  group_by(ethgrp) %>%
+  summarise(cnt = n()) %>%
+  mutate(freq = cnt / sum(cnt)) %>% 
+  arrange(desc(freq))
+
+#education 
+  ego_data %>%
+  group_by(educ) %>%
+  summarise(cnt = n()) %>%
+  mutate(freq = cnt / sum(cnt)) %>% 
+  arrange(desc(freq))
+  
+ 
+```
+
+```{r combine}
+#combine network measures and the variables from core that we want 
+#want a left merge (only those in analytic sample)
+
+combined_df = merge(x=ego_data, y=network_metrics_df, by="su_id", all.x=TRUE)
+
+#View(combined_df)
+
+#this gives us the summary statistics for table 2 for network characteristics 
+summary(combined_df)
+
+length(combined_df$su_id)
+
+#look at degree in more depth 
+ #degree 
+  combined_df %>%
+  group_by(n) %>%
+  summarise(cnt = n()) %>%
+  mutate(freq = cnt / sum(cnt)) %>% 
+  arrange(desc(freq))
+
+```
+##Analysis 
+
+Now we will move on to the ordinal logisitic regression to examine whether any of the network characteristics are associated with feelings of loneliness. Need to use the survey weights to properly adjust for the sampling scheme (svyolr). We will run each of the models and then exponeniate the coefficients and standard errors to get odds ratios. 
+
+```{r regression}
+#survey weights 
+design <- svydesign(ids = ~su_id, strata = ~stratum, weights = ~weight_adj, data = combined_df)
+
+#OLR 
+
+#degree 
+summary(svyolr(as.factor(loneliness) ~n + gender + age + as.factor(educ) + as.factor(ethgrp), design))
+exp(-0.007954711)
+exp(0.036511201)
+
+#diversity 
+summary(svyolr(as.factor(loneliness) ~ diverse + gender + age + as.factor(educ) + as.factor(ethgrp), design))
+exp(-0.094027360)
+exp(0.045395693)
+
+#density 
+summary(svyolr(as.factor(loneliness) ~ density + gender + age + as.factor(educ) + as.factor(ethgrp), design))
+exp(-1.128135498)
+exp(0.261760235)
+
+#interaction frequency 
+summary(svyolr(as.factor(loneliness) ~ inter_freq + gender + age + as.factor(educ) + as.factor(ethgrp), design))
+exp(-0.07304694)
+exp(0.04307831)
+
+#closeness
+summary(svyolr(as.factor(loneliness) ~ prop_close + gender + age + as.factor(educ) + as.factor(ethgrp), design))
+exp(-2.915167397)
+exp(0.369637787)
+```
+
+I still think there's a lot of future work that could be done in this analysis. I would want to rescale these variables since they all have very different scales (maybe just standardize everything?). That might make the models more interpretable, but it loses the direct meaning of these network characteristics which I think is also very important, especially in this class. It does look like in many of these regressions the changes between each of the units in the UCLA loneliness score are very different. This model might perform better/be more valid if the score was changed in some way. Maybe reducing the categories? It looks like 0 & 1 are generally the same and the middle groups 2 & 3 are similar as well as the high groups 4 - 6. Maybe these could be combined. Not sure if that's just overly manipulating the data and the UCLA loneliness score is very consistently used so perhaps better to just go with the standard. 
+
+Could also be interesting to look at whether any of the covariates have meaningful interaction effects - like do women experience less loneliness with larger network sizes than men? I think I'll wait to explore these questions if I continue on with this project with NSHAP and NORC. I would have to look into more of the theory to understand what might be plausible, rather than just running multiple iterations of these models in a p-hacky sort of way. 
+
+Overall, I think there's still a lot that could be done in this analysis but I understand the network characteristics much more in depth in a dataset I care about. There seems to be some evidence to suggest that high-quality, tight knit, and close networks (density and closeness) are important for reducing feelings of loneliness.  
+
+
+=

@@ -1,0 +1,201 @@
+---
+title: "HW7_Benson_Jade"
+author: "Jade Benson"
+date: "11/12/2021"
+output: pdf_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(igraph)
+library(intergraph)
+library(UserNetR)
+library(sna)
+
+```
+
+
+Two mode networks link one type of social entity to another type. This expands the definition of social networks to include anything from people and events/affiliations, to more abstract groups and themes (Greensboro massacre article), to foods and flavor compounds - the possibilities are really endless. Duality allows us to visualize any relationality and use social network analysis techniques to better understand these relationships. For example, I've been working with the DHHS network that examines the relationships between tobacco control leaders across the federal government. We could add in projects as another mode to see how specific projects bring together different leaders and which projects might benefit from expanding their reach and collaboration.  
+
+To explore 2-mode networks, we will use data from the Southern Women Data Set. This data originates from an ethnography conducted in the 1930s to comparatively examine the role that class played in white and black society. Part of this study included a 9 month observation period of 18 women who interacted at 14 informal social events. Social events include everything from working together, church dinners, women's club meetings, PTO meetings, dinner parties, etc. Through this network and the other descriptive data collected, we can better understand how social class influenced women's social interactions. 
+
+First, we will examine the 2-mode network of women and events. We construct a matrix where the rows represent each of the 18 women and the columns are the 14 events. Ones indicate that a woman attended the event (and 0s mean they did not attend). This network represents which women (in red) attended which events (blue). Ties capture group attendance. We can focus on the events to see how well attended they were (large events) and which women attended them (ties). We can focus on each woman as well to see which events they attended (how busy/popular they are) and who was also at these events. 
+
+```{r}
+#load in data from csv 
+
+SW_df <- read.csv("/Users/jadebenson/Documents/Autumn_2021/SNA/davis_bipartite-1.csv", 
+                     header=T,
+                     as.is=T)
+#View(SW_df)
+class(SW_df)
+
+
+#I'm actually going to use matrices 
+#since examples make this easy!
+
+#rows as women 
+#columns as events 
+#0/1 values if they attended that event 
+
+SW_mat <- matrix(0, nrow = length(unique(SW_df$w)), ncol = max(SW_df$e))
+
+# label the matrix cols and rows
+colnames(SW_mat) <- paste("Event", 1:max(SW_df$e), sep="")
+rownames(SW_mat) <- unique(SW_df$w)
+
+#there has to be a better way to do this 
+#sorry for how inelegant this is
+SW_mat[1,SW_df[SW_df$w == "EVELYN",2]] <- 1
+SW_mat[2,SW_df[SW_df$w == "LAURA",2]] <- 1
+SW_mat[3,SW_df[SW_df$w == "THERESA",2]] <- 1
+SW_mat[4,SW_df[SW_df$w == "BRENDA",2]] <- 1
+SW_mat[5,SW_df[SW_df$w == "CHARLOTTE",2]] <- 1
+SW_mat[6,SW_df[SW_df$w == "FRANCES",2]] <- 1
+SW_mat[7,SW_df[SW_df$w == "ELEANOR",2]] <- 1
+SW_mat[8,SW_df[SW_df$w == "PEARL",2]] <- 1
+SW_mat[9,SW_df[SW_df$w == "RUTH",2]] <- 1
+SW_mat[10,SW_df[SW_df$w == "VERNE",2]] <- 1
+SW_mat[11,SW_df[SW_df$w == "MYRNA",2]] <- 1
+SW_mat[12,SW_df[SW_df$w == "KATHERINE",2]] <- 1
+SW_mat[13,SW_df[SW_df$w == "SYLVIA",2]] <- 1
+SW_mat[14,SW_df[SW_df$w == "NORA",2]] <- 1
+SW_mat[15,SW_df[SW_df$w == "HELEN",2]] <- 1
+SW_mat[16,SW_df[SW_df$w == "DOROTHY",2]] <- 1
+SW_mat[17,SW_df[SW_df$w == "OLIVIA",2]] <- 1
+SW_mat[18,SW_df[SW_df$w == "FLORA",2]] <- 1
+
+
+#woman by event matrix
+SW_mat
+
+
+
+```
+
+```{r w-g}
+#use SNA package
+require(sna)
+
+# plot matrix using sna package: plot as "twomode"
+my_colors <- c(rep("dark red", nrow(SW_mat)), rep("dark blue", ncol(SW_mat)))
+gplot(SW_mat, 
+      gmode="twomode", 
+      mode = "fruchtermanreingold",
+      usearrows=FALSE,
+
+      edge.col = "black",
+      edge.lwd = 0.5,
+
+
+      label=c(rownames(SW_mat), c(1:14)),
+      label.cex = 0.75,
+      label.col = my_colors,
+      label.pos = 3,
+      
+      vertex.cex=1.5,
+      vertex.border = "black")
+      
+```
+
+We can help clarify the interpretations from this 2-mode network by creating two 1-mode networks from it. We can look at the women-women matrix and network to look at whether and how many events women went to together. The numbers in the matrix represent the number of events those two women went to and the diagonal reperesents the total number of events that woman attended. From the diagonal, we can see who were the busiest and most popular women that participated in the most events. We see that Evelyn and Theresa are the most powerful/popular women in this network as they attend the most amount of events (8). I would be curious to know what their social class was, but if I were to guess, I would assume they're upper middle class as they likely have the most time to plan these events and attend so many. There also seems to be a tight-knit group between Evelyn, Theresa, Brenda, and Laura since they all attended at least 6 events together. Olivia and FLora make up another social group as they only attended 2 groups each and together. They might be of a lower class and know each other through working together (that counts as an event) and only have a little time to spend on other social events. Looking at the women-women matrix and network can generate these types of ideas that can be further explored with the dataset's rich ethnographic observations. 
+
+```{r w-w}
+# transpose women-event matrix
+SW_mat_t <- t(SW_mat)
+
+# make women-women matrix
+# persons connected by being members of the same groups
+# [women][group]*[group][women]
+
+ww <- SW_mat %*% SW_mat_t
+ww
+
+
+ gplot(ww, 
+      
+      mode = "fruchtermanreingold",
+      usearrows=FALSE,
+      
+      
+      edge.lwd = 0.5*ww,
+      edge.col = "black",
+
+      label = rownames(ww),
+      label.cex = 0.75,
+      label.col = "red", 
+
+      
+      vertex.col="light blue",
+      vertex.cex=1.5,
+      vertex.border = "black"
+      )
+```
+
+
+The group by group matrix tells us about group attendance and size. The main diagonal tells us how many women attended each event (the event size). The other values tell us how many women attended both row event and column event . This information can let us know which was the most well-attended event which could be combined with event type to better understand what has the most social draw in a community. The most popular event was event 8 with 14 women attending - Are most women on the PTO and attending that? Or church dinners? This might tell us about value systems. Also we can combine this with the prior information to see which events only included a few women and who those women were. For example, events 1, 2, 13 and 14 only included 3 people each. Events 1 & 2 both had Evelyn and Laura as attendees who we saw as being close earlier, and events 13 & 14 only included Katherine, Silvia, and Nora each. We might be able to make observations about exclusivity or about workplaces or value systems from looking at the structure and attendance of events. 
+
+```{r gg}
+
+# make "GROUP BY GROUP" matrix
+# groups connected by sharing the same members
+# [group][person]*[person][group]
+
+gg <- SW_mat_t %*% SW_mat
+gg
+
+# plot gg
+gplot(gg, 
+      mode = "fruchtermanreingold",
+      usearrows=FALSE,
+      
+      edge.lwd = 0.5*gg,
+      edge.col = "black",
+
+      
+      label = rownames(gg),
+      label.col = "blue",
+
+      vertex.col = "dark red",
+      vertex.cex=1.5,
+      vertex.border = "black"
+      )
+
+
+```
+
+
+From these observations, I was interested in calculating betweeness on the original woman-event network to see what events acted as a tie between these multiple different friend groups. I think these events could give us insight into what events brought many different people together and combining these with event descriptions would be very interesting. Additionally, it will tell us who are the social butterflies that are friends with many different friend groups or can attend many different types of events. Who (if anyone) can attend events and friendships across social class? 
+
+```{r betweeness}
+#different approach to turn this into network
+#use this for betweeness calculation/scaling 
+
+SW_network <- graph.data.frame(SW_df, directed=FALSE)
+V(SW_network)$type <- bipartite_mapping(SW_network)$type 
+
+between <- igraph::betweenness(SW_network)
+
+V(SW_network)$color <- ifelse(V(SW_network)$type, "light blue", "red")
+V(SW_network)$shape <- ifelse(V(SW_network)$type, "square", "circle")
+V(SW_network)$label.color <-ifelse(V(SW_network)$type, "black", "dark red")
+V(SW_network)$label.font <- ifelse(V(SW_network)$type, 2, 1) 
+
+plot(SW_network, 
+      layout = layout.fruchterman.reingold,
+
+      edge.col = "black",
+      edge.lwd = 0.5,
+  
+      vertex.size= 0.5*between,
+      vertex.border = "black", 
+      vertex.label.cex = 0.75)
+
+```
+
+
+From this graph, we see that events 8 and 9 act as connections between different groups of women and Nora attends many events from different groups. Evelyn and Brenda also have high betweenness scores, probably because they are attending so many events. 
+
+There may be a difference between these large events and the smaller events because of their structure. If we're interested in examining these different types of events, we could just dichotomize the original network into a new one that only includes highly attended group and their corresponding women and one of smaller events and their women. We could also pick a threshold and only examine events where a majority of women attended (9 or more) or the smallest groups (only 3 members) to look at how those may differ in structure and social class composition of the women. It looks like the largest groups and the most social women have the highest betweenness scores and so are encouraging the most interactions across different social categorizations. However, we might be better able to see cliques if we only look at the small groups. 

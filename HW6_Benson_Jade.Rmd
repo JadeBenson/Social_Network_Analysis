@@ -1,0 +1,131 @@
+---
+title: "HW6_Benson_Jade"
+author: "Jade Benson"
+date: "11/8/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(igraph)
+library(intergraph)
+library(UserNetR)
+data(DHHS)
+```
+
+##DHHS Description##
+
+
+I'm going to continue working the the Department of Health and Human Services (DHHS) dataset, since it matches with my interests and I'm interested in further exploring how collaboration in the federal government affects public health interventions. This dataset includes 54 tobacco control leaders (nodes) in 11 different agenices of DHHS during 2004 - 2005 and describes 477 levels of connection between them (edges). This study was lead by the Senior Advisor of Tobacco Control and their research team who conducted by snowball and reputational sampling to identify other tobacco control leaders in each agency and then asking them to identify individuals most knowledgeable about tobacco activities within their own agency and any other tobacco leaders within the DHHS (full criteria can be found in their paper: https://www.ncbi.nlm.nih.gov/pmc/articles/PMC2928935/). Only "substantial players" were included (those with 3 or more nominations) and follow-up surveys were sent out to these 54. The survey included questions about their network contact and structure, their experience, and what barriers they experienced working with other agencies on tobacco control. The network was symmetrized (undirected network) where if a dyad responded with different frequencies, they were averaged, and if only one responded, that level of communication was assumed. The full network can be seen below and nodes are colored by agency. 
+
+```{r dataprep}
+#covert network to igraph object
+DHHS_igraph <- asIgraph(DHHS)
+class(DHHS_igraph)
+
+# fruchterman reingold
+f <- layout.fruchterman.reingold(DHHS_igraph)
+
+
+# set colors
+V(DHHS_igraph)$color <- "black"
+V(DHHS_igraph) [ agency == 0 ]$color <- "navy"
+V(DHHS_igraph) [ agency == 1 ]$color <- "orange"
+V(DHHS_igraph) [ agency == 2 ]$color <- "yellow"
+V(DHHS_igraph) [ agency == 3 ]$color <- "green"
+V(DHHS_igraph) [ agency == 4 ]$color <- "blue"
+V(DHHS_igraph) [ agency == 5 ]$color <- "purple"
+V(DHHS_igraph) [ agency == 6 ]$color <- "pink"
+V(DHHS_igraph) [ agency == 7 ]$color <- "red"
+V(DHHS_igraph) [ agency == 8 ]$color <- "light blue"
+V(DHHS_igraph) [ agency == 9 ]$color <- "grey"
+V(DHHS_igraph) [ agency == 10 ]$color <- "brown"
+
+#Quick reminder visualization
+
+plot(DHHS_igraph, layout = f,  edge.arrow.size=.5, vertex.label.color="black", vertex.label = NA,   vertex.color=V(DHHS_igraph)$color) 
+legend("right", legend = c("ACF", "AHRQ", "CDC", "CMS", "FDA", "HRSA", "IHS", "NIH" ,"OGC", "OS", "SAMHSA"), fill = c("navy", "orange", "yellow", "green", "blue", "purple", "pink", "red", "light blue", "grey", "brown"))
+
+```
+
+
+##Subgroups##
+
+I am interested in the Louvain algorithm to detect communities. This algorithm uses the modularity metric to identify clusters through a hierarchial approach. Modularity measures whether there is more connectedness between the nodes and less between them (cohesion measure). Louvain begins by assigning each node to its own community and then with each step is moved to whatever community that maximizes its modularity. Whenever nodes can no longer be reassigned, the process restarts with the node merged into the best community. The algoirthm stops when there's only one node left or modularity can't improve with any more iterations. I find this algorithm interesting because its essentially a hierarchical clusering model applied to networks. In other work, I've found that these types of algorithms can do a great job at finding natural groups since they are unsupervised and don't require any preliminary assumptions - they can result in surprising and useful findings. It's a less strict approach than either cliques or k-means and might discover important collaborating groups within the DHHS. 
+
+```{r lovain}
+kar_louv <- cluster_louvain(DHHS_igraph)
+
+# number and size of communities
+length(kar_louv)
+sizes(kar_louv)
+
+# membership of nodes
+#membership(kar_louv)
+summary(DHHS_igraph)
+
+
+# plot
+plot(kar_louv, DHHS_igraph, vertex.label = V(DHHS_igraph)$agency)
+
+```
+The Louvain algorithm identifies 3 communities: two with 19 members and one with 16 members. One of the large subgroups includes all of the agencies and includes some of the members in less-connected agencies like the ACF, CMS, and OGC. The other large subgroup is primarily the closely connected CDC members and other top leaders in the OS and others. The smaller subgroup is a community of highly connected NIH leaders with one CDC leader. This helps us understand that there are overlapping collaborative communities that center on the CDC, NIH, and OS. The NIH is particularly well-connected within its own department, but the CDC does an excellent job of staying connected with each other and a large group of collaborators across agencies. 
+
+
+#Cliques#
+
+Since cliques is the most strict approach to identifying subgroups, let's run this first with n = 3 and see if there are maximally connected collaborator groups beyond just pairs (where everyone is connected to everyone). 
+
+```{r cliques}
+
+#are there any cliques where everyone is connected?
+count_max_cliques(DHHS_igraph, min=3)
+#yes! Many actually (123)
+
+#what's the largest clique? 
+largest_cliques(DHHS_igraph)
+#There are 2 with 13 nodes each
+
+largest_clique_1 <- largest_cliques(DHHS_igraph)[1]
+largest_clique_1
+
+largest_clique_2 <- largest_cliques(DHHS_igraph)[2]
+largest_clique_2
+
+# plot the first largest
+plot(induced_subgraph(DHHS_igraph, largest_clique_1[[1]]), edge.arrow.size=.5, vertex.label.color="black",   vertex.color=V(DHHS_igraph)$color) 
+legend("right", legend = c("ACF", "AHRQ", "CDC", "CMS", "FDA", "HRSA", "IHS", "NIH" ,"OGC", "OS", "SAMHSA"), fill = c("navy", "orange", "yellow", "green", "blue", "purple", "pink", "red", "light blue", "grey", "brown"))
+
+# plot the second largest
+plot(induced_subgraph(DHHS_igraph, largest_clique_2[[1]]), edge.arrow.size=.5, vertex.label.color="black",   vertex.color=V(DHHS_igraph)$color) 
+legend("right", legend = c("ACF", "AHRQ", "CDC", "CMS", "FDA", "HRSA", "IHS", "NIH" ,"OGC", "OS", "SAMHSA"), fill = c("navy", "orange", "yellow", "green", "blue", "purple", "pink", "red", "light blue", "grey", "brown"))
+
+
+```
+There are actually many cliques within this network where everyone is connected to everyone within the group (123). This suggests to me that overall the network is well connected. But I hesitate to make strong conclusions about the n=3 clique because of how this network was designed. Nodes were only included if they were nominated by at least 3 members, so they are more likely to be interconnected. 
+
+There are two largest cliques that both have 13 members where everyone is connected. Most of the members between these groups are the same and they all come from the three same agencies: CDC, AHRQ, and ACF. This suggests to me that there may be an interagency working group that is closely connected with all its members or an otherwise specialized group of leaders that collaborates often with all of each other. 
+
+
+#K-Cores#
+
+K-Cores is a slightly less strict approach that identifies subgroups by whether each node is connected to at least k other nodes. Luke's textbook uses this exact dataset and method to illustrate the approach. Luke first selects only those nodes that collaborate very frequently which allows us to see who actually meaningfully collaborates together. I'm curious about the structure of even infrequent contact though so will run his same approach on the full network. 
+
+
+```{r kcores}
+#copied from Luke Chapter 11 
+
+coreness <- graph.coreness(DHHS_igraph)
+table(coreness)
+
+#plot network with colors according to agency and number according to coreness 
+plot(DHHS_igraph, vertex.label = coreness, edge.arrow.size=.5, vertex.label.color="black",   vertex.color=V(DHHS_igraph)$color) 
+legend("right", legend = c("ACF", "AHRQ", "CDC", "CMS", "FDA", "HRSA", "IHS", "NIH" ,"OGC", "OS", "SAMHSA"), fill = c("navy", "orange", "yellow", "green", "blue", "purple", "pink", "red", "light blue", "grey", "brown"))
+
+```
+
+There are some departments that are highly connected like the NIH and the CDC. Almost everyone is the NIH is working with the maximum number of other leaders except for one individual who's less collaborative. There's one leader in the AHRQ and the OS who are also maximally connected. There's one member in the ACF who's only connected to the other ACF member who keeps them in this network. 
+
+
+I think all of these methods allow us interesting insight into the DHHS network by being able to visualize the primary working groups with varying levels of closeness. Personally, I think the Louvain algorithm gave us the most insight as we were able to see the intersecting leadership groups that were focused primarily within departments and the CDC's crucial role at facilitating interagency collaborations.  
